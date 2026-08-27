@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Winx Bloom Macerası - Aşama 1</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #87CEEB; touch-action: none; font-family: sans-serif; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #ui-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        #joystick-zone { position: absolute; bottom: 20px; left: 20px; width: 150px; height: 150px; pointer-events: auto; }
+        #touch-pad { position: absolute; top: 0; right: 0; width: 50%; height: 100%; pointer-events: auto; }
+        #instructions { 
+            position: absolute; top: 20px; left: 50%; transform: translateX(-50%); 
+            background: rgba(0, 0, 0, 0.5); color: white; padding: 10px 20px; 
+            border-radius: 10px; text-align: center; pointer-events: none; 
+            border: 2px solid #ff66b2; box-shadow: 0 0 10px #ff66b2;
+            user-select: none;
+        }
+        h3 { margin: 0 0 5px 0; color: #ff99cc; }
+        p { margin: 0; font-size: 14px; }
+    </style>
+    <!-- 3D Motoru -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <!-- Sanal Joystick Motoru -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/nipplejs/0.10.1/nipplejs.min.js"></script>
+</head>
+<body>
+    <div id="ui-container">
+        <div id="instructions">
+            <h3>Winx Bloom (Aşama 1)</h3>
+            <p>Sol alttan yürü, ekranın sağına dokunarak kamerayı çevir.</p>
+        </div>
+        <div id="joystick-zone"></div>
+        <div id="touch-pad"></div>
+    </div>
+
+    <script>
+        // 1. TEMEL SAHNE KURULUMU
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x87CEEB); // Gökyüzü
+        scene.fog = new THREE.Fog(0x87CEEB, 15, 60);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        // 2. IŞIKLAR
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+        dirLight.position.set(20, 40, -20);
+        dirLight.castShadow = true;
+        dirLight.shadow.camera.left = -30;
+        dirLight.shadow.camera.right = 30;
+        dirLight.shadow.camera.top = 30;
+        dirLight.shadow.camera.bottom = -30;
+        scene.add(dirLight);
+
+        // 3. ÇEVRE (Zemin ve engeller)
+        const groundGeo = new THREE.PlaneGeometry(150, 150);
+        const groundMat = new THREE.MeshLambertMaterial({ color: 0x4CAF50 }); // Yeşil Çimen
+        const ground = new THREE.Mesh(groundGeo, groundMat);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+
+        // Yürürken hız hissini anlamak için kahverengi kutular (ağaç kütüğü gibi)
+        for (let i = 0; i < 40; i++) {
+            const box = new THREE.Mesh(
+                new THREE.BoxGeometry(1, 3, 1),
+                new THREE.MeshLambertMaterial({ color: 0x8B4513 })
+            );
+            box.position.set((Math.random() - 0.5) * 80, 1.5, (Math.random() - 0.5) * 80);
+            box.castShadow = true;
+            box.receiveShadow = true;
+            scene.add(box);
+        }
+
+        // 4. KARAKTER (Bloom Geçici Modeli - Turuncu/Mavi)
+        const playerGroup = new THREE.Group();
+        scene.add(playerGroup);
+
+        const bodyMesh = new THREE.Mesh(
+            new THREE.CapsuleGeometry(0.5, 1, 4, 8),
+            new THREE.MeshLambertMaterial({ color: 0x1E90FF }) // Mavi kıyafet temsili
+        );
+        bodyMesh.position.y = 1;
+        bodyMesh.castShadow = true;
+        playerGroup.add(bodyMesh);
+
+        // Saç / Kafa (Yönü anlamak için)
+        const headMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(0.6, 0.6, 0.6),
+            new THREE.MeshLambertMaterial({ color: 0xFF8C00 }) // Turuncu saç temsili
+        );
+        headMesh.position.set(0, 1.8, 0.2); // Yüzü +Z yönüne baksın
+        playerGroup.add(headMesh);
+
+        // 5. KAMERA SİSTEMİ (Metin2 Tipi Üçüncü Şahıs)
+        let cameraAngle = Math.PI; // Karakterin arkasından başla
+        let cameraPitch = 0.3; // Hafif yukarıdan bakış
+        const cameraDistance = 6;
+
+        function updateCamera() {
+            const offsetX = cameraDistance * Math.sin(cameraAngle) * Math.cos(cameraPitch);
+            const offsetY = cameraDistance * Math.sin(cameraPitch);
+            const offsetZ = cameraDistance * Math.cos(cameraAngle) * Math.cos(cameraPitch);
+
+            camera.position.x = playerGroup.position.x - offsetX;
+            camera.position.y = playerGroup.position.y + 1.5 + offsetY;
+            camera.position.z = playerGroup.position.z - offsetZ;
+            camera.lookAt(playerGroup.position.x, playerGroup.position.y + 1.5, playerGroup.position.z);
+        }
+
+        // 6. KONTROLLER
+        // Joystick
+        let moveVector = { x: 0, y: 0 };
+        const joystick = nipplejs.create({
+            zone: document.getElementById('joystick-zone'),
+            mode: 'static',
+            position: { left: '75px', bottom: '75px' },
+            color: '#ff66b2'
+        });
+
+        joystick.on('move', (evt, data) => {
+            const force = Math.min(data.force, 1);
+            moveVector.x = Math.cos(data.angle.radian) * force;
+            moveVector.y = Math.sin(data.angle.radian) * force;
+        });
+        joystick.on('end', () => { moveVector = { x: 0, y: 0 }; });
+
+        // Kamera Döndürme (Sağ Ekran)
+        const touchPad = document.getElementById('touch-pad');
+        let isDragging = false;
+        let prevX = 0, prevY = 0;
+
+        const startDrag = (x, y) => { isDragging = true; prevX = x; prevY = y; };
+        const moveDrag = (x, y) => {
+            if (!isDragging) return;
+            cameraAngle -= (x - prevX) * 0.01;
+            cameraPitch += (y - prevY) * 0.01;
+            cameraPitch = Math.max(0.1, Math.min(Math.PI / 2.5, cameraPitch)); // Kamera yüksekliği sınırı
+            prevX = x; prevY = y;
+        };
+        const endDrag = () => { isDragging = false; };
+
+        // Mobil Dokunmatik
+        touchPad.addEventListener('touchstart', e => startDrag(e.touches[0].clientX, e.touches[0].clientY));
+        touchPad.addEventListener('touchmove', e => moveDrag(e.touches[0].clientX, e.touches[0].clientY));
+        touchPad.addEventListener('touchend', endDrag);
+        
+        // PC Mouse (Test için)
+        touchPad.addEventListener('mousedown', e => startDrag(e.clientX, e.clientY));
+        window.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+        window.addEventListener('mouseup', endDrag);
+
+        // 7. OYUN DÖNGÜSÜ
+        const clock = new THREE.Clock();
+        const moveSpeed = 6;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const delta = clock.getDelta();
+
+            // Yürüme mekaniği
+            if (moveVector.x !== 0 || moveVector.y !== 0) {
+                const forward = new THREE.Vector3(Math.sin(cameraAngle), 0, Math.cos(cameraAngle)).normalize();
+                const right = new THREE.Vector3(Math.sin(cameraAngle - Math.PI/2), 0, Math.cos(cameraAngle - Math.PI/2)).normalize();
+
+                const moveDir = new THREE.Vector3()
+                    .addScaledVector(forward, moveVector.y) // İleri/Geri
+                    .addScaledVector(right, -moveVector.x) // Sağ/Sol
+                    .normalize();
+
+                playerGroup.position.addScaledVector(moveDir, moveSpeed * delta);
+                
+                // Karakterin yüzünü gittiği yöne çevir
+                const targetRotation = Math.atan2(moveDir.x, moveDir.z);
+                playerGroup.rotation.y = targetRotation;
+            }
+
+            updateCamera();
+            renderer.render(scene, camera);
+        }
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        animate();
+    </script>
+</body>
+</html>
